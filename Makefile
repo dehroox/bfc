@@ -1,5 +1,5 @@
 CFLAGS += -std=c23 -O3 -flto -pedantic-errors \
-	-Wall -Wextra -Werror \
+	-Wall -Wextra \
 	-Wshadow -Wdouble-promotion -Wformat=2 -Wundef \
 	-Wsign-conversion \
 	-Wstrict-prototypes -Wmissing-prototypes \

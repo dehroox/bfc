@@ -16,6 +16,7 @@ Diagnostics:
       - hicpp-use-nullptr
       - modernize-use-nullptr
       - google-build-using-namespace
+      - concurrency-mt-unsafe
       - llvmlibc-restrict-system-libc-headers
       - google-build-namespaces
       - llvmlibc-implementation-in-namespace

@@ -1,22 +1,23 @@
+#define _POSIX_C_SOURCE 200809L
+#include <limits.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 /* Instruction Set */
-#define MOVE_LEFT	  "<"
-#define MOVE_RIGHT	  ">"
-#define INCREMENT	  "+"
-#define DECREMENT	  "-"
-#define OUTPUT		  "."
-#define INPUT		  ","
-#define OPEN_BRACKET  "["
-#define CLOSE_BRACKET "]"
-
-typedef enum { x86_64, x86 } Architecture;
+static const char *const MOVE_LEFT	   = "<";
+static const char *const MOVE_RIGHT	   = ">";
+static const char *const INCREMENT	   = "+";
+static const char *const DECREMENT	   = "-";
+static const char *const OUTPUT		   = ".";
+static const char *const INPUT		   = ",";
+static const char *const OPEN_BRACKET  = "[";
+static const char *const CLOSE_BRACKET = "]";
 
 typedef struct {
-	char *output;
-	Architecture arch;
+	const char *arch;
 	bool preprocess;
 	bool optimize;
 
@@ -30,12 +31,47 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 
-	/* initialize all variables */
-	static BFC self = {0};
+	static BFC self = {
+		.arch		= "x64",
+		.preprocess = true,
+		.optimize	= true,
+	};
+	static const char *output = NULL;
+	static char **input		  = NULL;
+	static int opt			  = '\0';
+
+	while (-1 != (opt = getopt(argc, argv, "ho:a:PO"))) {
+		switch (opt) {
+		case 'h':
+			help();
+			break;
+		case 'o':
+			output = optarg;
+			break;
+		case 'a':
+			self.arch = optarg;
+			break;
+		case 'P':
+			self.preprocess = false;
+			break;
+		case 'O':
+			self.optimize = false;
+			break;
+		default:
+			/* NOLINTED here because of fprintf_s usage recommendation */
+			(void)fprintf(stderr, "Unknown Option: %c\n", opt); // NOLINT
+			help();
+			return EXIT_FAILURE;
+		}
+	}
+
+	if (!(optind < argc)) {
+		(void)fputs("No positional arguments", stderr);
+		return EXIT_FAILURE;
+	}
+	input = &argv[optind];
 
 	return EXIT_SUCCESS;
-	(void)argc;
-	(void)argv;
 }
 
 static inline void help(void) {
@@ -45,6 +81,6 @@ static inline void help(void) {
 			   "    Options:\n"
 			   "      -o  - Sets output file, by default [inputname].bf.o.s\n"
 			   "      -a  - Sets architecture output, by default [native]\n"
-			   "	  -np - Disables preprocessing\n"
-			   "      -no - Disables optimization");
+			   "	  -P - Disables preprocessing\n"
+			   "      -O - Disables optimization");
 }
