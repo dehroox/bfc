@@ -28,7 +28,7 @@ SRC := $(shell find $(SRC_DIR) -name '*.c')
 OBJ := $(patsubst $(SRC_DIR)/%.c,obj/%.o,$(SRC))
 DEP := $(OBJ:.o=.d)
 
-OUTPUT ?= hardy
+OUTPUT ?= bfc
 
 $(OUTPUT): $(OBJ)
 	cc $(CFLAGS) $^ -o $@ $(LDFLAGS)
