@@ -79,7 +79,7 @@ static inline void help(void) {
 			   "    Usage:\n"
 			   "      `bfc [bf file] -o [asm output]`\n\n"
 			   "    Options:\n"
-			   "      -o  - Sets output file, by default [inputname].bf.o.s\n"
+			   "      -o  - Sets output file, by default [stdio]\n"
 			   "      -a  - Sets architecture output, by default [native]\n"
 			   "	  -P - Disables preprocessing\n"
 			   "      -O - Disables optimization");
