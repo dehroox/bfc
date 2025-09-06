@@ -1,0 +1,25 @@
+CompileFlags:
+  Remove:
+    - -fanalyzer
+    - -fipa-pta
+    - -fstrict-volatile-bitfields
+
+Diagnostics:
+  ClangTidy:
+    Add:
+      - '*'
+    Remove:
+      - boost-*
+      - cppcoreguidelines-*
+      - fuchsia-*
+      - objc-*
+      - hicpp-use-nullptr
+      - modernize-use-nullptr
+      - google-build-using-namespace
+      - llvmlibc-restrict-system-libc-headers
+      - google-build-namespaces
+      - llvmlibc-implementation-in-namespace
+      - llvm-header-guard
+      - android-cloexec-open
+      - readability-magic-numbers
+      - altera-unroll-loops
