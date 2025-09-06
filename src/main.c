@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -11,11 +12,26 @@
 #define OPEN_BRACKET  "["
 #define CLOSE_BRACKET "]"
 
+typedef enum { x86_64, x86 } Architecture;
+
+typedef struct {
+	char *output;
+	Architecture arch;
+	bool preprocess;
+	bool optimize;
+
+} __attribute__((aligned(16))) BFC;
+
 static inline void help(void);
 
 int main(int argc, char **argv) {
+	if (1 == argc) {
+		help();
+		return EXIT_FAILURE;
+	}
 
-	help();
+	/* initialize all variables */
+	static BFC self = {0};
 
 	return EXIT_SUCCESS;
 	(void)argc;
