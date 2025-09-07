@@ -24,7 +24,8 @@ enum BrainfuckInstruction {
 };
 
 /* Write buffer safely */
-static int writeAll(int fileDescriptor, const char *buffer, size_t length) {
+static inline int writeAll(int fileDescriptor, const char *buffer,
+						   size_t length) {
 	size_t remaining = length;
 	const char *ptr	 = buffer;
 	while (remaining) {
