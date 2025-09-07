@@ -27,8 +27,7 @@ typedef struct {
 } __attribute__((aligned(16))) BFC;
 
 static inline void help(void);
-static inline ssize_t readfile(const char *filePath, char **bufferPtr,
-							   size_t *bufferCapacityPtr);
+static inline ssize_t readfile(const char *filePath, char **bufferPtr);
 
 int main(int argc, char **argv) {
 	if (1 == argc) {
@@ -44,12 +43,11 @@ int main(int argc, char **argv) {
 	};
 
 	FILE *output = stdout;
-	char **input = NULL;
+	char *input	 = NULL;
 	int opt		 = '\0';
 
-	ssize_t fileSize	  = 0;
-	char *buffer		  = NULL;
-	size_t bufferCapacity = 0;
+	ssize_t fileSize = 0;
+	char *buffer	 = NULL;
 
 	/* Argument Parsing */
 	while (-1 != (opt = getopt(argc, argv, "ho:a:PO"))) {
@@ -81,21 +79,19 @@ int main(int argc, char **argv) {
 	}
 
 	if (!(optind < argc)) {
-		(void)fputs("No positional arguments", stderr);
+		(void)fputs("No input provided", stderr);
 		return EXIT_FAILURE;
 	}
-	input = &argv[optind];
+	input = argv[optind];
 
 	/* File reading */
-	for (int i = 0; i < (argc - optind); ++i) {
-		fileSize = readfile(input[i], &buffer, &bufferCapacity);
-		if (fileSize < 0) {
-			free(buffer);
-			perror(input[i]);
-			return EXIT_FAILURE;
-		}
-		(void)fwrite(buffer, 1, (size_t)fileSize, output); /* temporary */
+	fileSize = readfile(input, &buffer);
+	if (fileSize < 0) {
+		free(buffer);
+		perror(input);
+		return EXIT_FAILURE;
 	}
+	(void)fwrite(buffer, 1, (size_t)fileSize, output); /* temporary */
 
 	/* Cleanup */
 	free(buffer);
@@ -105,65 +101,70 @@ int main(int argc, char **argv) {
 static inline void help(void) {
 	(void)puts("BFC - Brainfuck Compiler\n"
 			   "    Usage:\n"
-			   "      `bfc [bf file] -o [asm output]`\n\n"
+			   "      `bfc -o [asm output] [bf file]`\n\n"
 			   "    Options:\n"
-			   "      -o  - Sets output file, by default [stdio]\n"
-			   "      -a  - Sets architecture output, by default [native]\n"
-			   "      -P  - Disables preprocessing\n"
-			   "      -O  - Disables optimization");
+			   "      -o:  - Sets output file, by default [stdio]\n"
+			   "      -a:  - Sets architecture output, by default [native]\n"
+			   "      -P   - Disables preprocessing\n"
+			   "      -O   - Disables optimization\n");
 }
 
-static inline ssize_t readfile(const char *filePath, char **bufferPtr,
-							   size_t *bufferCapacityPtr) {
-	int fileDescriptor = open(filePath, O_RDONLY | O_CLOEXEC);
+static inline ssize_t readfile(const char *filePath, char **bufferPtr) {
+	if (filePath == NULL || bufferPtr == NULL) {
+		return -1;
+	}
+
+	int fileDescriptor = open(filePath, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
 	if (fileDescriptor < 0) {
 		return -1;
 	}
 
-	/* Initialize or re-initialize the buffer */
+	struct stat fileStatus;
+	if (fstat(fileDescriptor, &fileStatus) < 0) {
+		close(fileDescriptor);
+		return -1;
+	}
+
+	if (fileStatus.st_size < 0 || fileStatus.st_size > SSIZE_MAX) {
+		close(fileDescriptor);
+		return -1;
+	}
+
+	const ssize_t fileSize	= fileStatus.st_size;
+	const size_t bufferSize = (size_t)fileSize + 1;
+
+	*bufferPtr = malloc(bufferSize);
 	if (*bufferPtr == NULL) {
-		*bufferCapacityPtr = 262144; /* Initial buffer size: 256KB */
-		*bufferPtr		   = malloc(*bufferCapacityPtr + 1);
-		if (*bufferPtr == NULL) {
+		close(fileDescriptor);
+		return -1;
+	}
+
+	ssize_t totalBytesRead = 0;
+	while (totalBytesRead < fileSize) {
+		ssize_t bytesRead = read(fileDescriptor, *bufferPtr + totalBytesRead,
+								 (size_t)(fileSize - totalBytesRead));
+
+		if (bytesRead <= 0) {
+			if (bytesRead == 0 && totalBytesRead == fileSize) {
+				break;
+			}
+			free(*bufferPtr);
+			*bufferPtr = NULL;
 			close(fileDescriptor);
 			return -1;
 		}
+
+		totalBytesRead += bytesRead;
 	}
 
-	size_t bufferLength = 0;
-	ssize_t bytesRead;
-
-	while ((bytesRead = read(fileDescriptor, *bufferPtr + bufferLength,
-							 *bufferCapacityPtr - bufferLength)) > 0) {
-		bufferLength += (size_t)bytesRead;
-
-		/* If buffer is full, reallocate to a larger size */
-		if (bufferLength == *bufferCapacityPtr) {
-			size_t newCapacity = *bufferCapacityPtr * 2;
-			char *newBuffer	   = realloc(*bufferPtr, newCapacity + 1);
-			if (newBuffer == NULL) {
-				close(fileDescriptor);
-				return -1;
-			}
-			*bufferPtr		   = newBuffer;
-			*bufferCapacityPtr = newCapacity;
-		}
+	if (totalBytesRead < fileSize) {
+		free(*bufferPtr);
+		*bufferPtr = NULL;
+		close(fileDescriptor);
+		return -1;
 	}
 
 	close(fileDescriptor);
-
-	if (bytesRead < 0) {
-		return -1;
-	}
-
-	/* Resize to fit the exact file size and add the null terminator */
-	char *finalBuffer = realloc(*bufferPtr, bufferLength + 1);
-	if (finalBuffer == NULL) {
-		return -1;
-	}
-	*bufferPtr				   = finalBuffer;
-	*bufferCapacityPtr		   = bufferLength;
-	(*bufferPtr)[bufferLength] = '\0';
-
-	return (ssize_t)bufferLength;
+	(*bufferPtr)[totalBytesRead] = '\0';
+	return totalBytesRead;
 }
