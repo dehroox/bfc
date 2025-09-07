@@ -21,6 +21,6 @@ Diagnostics:
       - google-build-namespaces
       - llvmlibc-implementation-in-namespace
       - llvm-header-guard
-      - android-cloexec-open
       - readability-magic-numbers
       - altera-unroll-loops
+      - bugprone-unsafe-functions
