@@ -1,170 +1,140 @@
-#define _POSIX_C_SOURCE 200809L
+#ifdef __linux__
+#define _GNU_SOURCE
+#endif
+
 #include <fcntl.h>
-#include <limits.h>
 #include <stdbool.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
 
-/* Instruction Set */
-static const char *const MOVE_LEFT	   = "<";
-static const char *const MOVE_RIGHT	   = ">";
-static const char *const INCREMENT	   = "+";
-static const char *const DECREMENT	   = "-";
-static const char *const OUTPUT		   = ".";
-static const char *const INPUT		   = ",";
-static const char *const OPEN_BRACKET  = "[";
-static const char *const CLOSE_BRACKET = "]";
+/* Brainfuck Instructions */
+enum BrainfuckInstruction {
+	moveLeft	 = '<',
+	moveRight	 = '>',
+	increment	 = '+',
+	decrement	 = '-',
+	outputChar	 = '.',
+	inputChar	 = ',',
+	openBracket	 = '[',
+	closeBracket = ']'
+};
 
-typedef struct {
-	const char *arch;
-	bool preprocess;
-	bool optimize;
-
-} __attribute__((aligned(16))) BFC;
-
-static inline void help(void);
-static inline ssize_t readfile(const char *filePath, char **bufferPtr);
+/* Write buffer safely */
+static int writeAll(int fileDescriptor, const char *buffer, size_t length) {
+	size_t remaining = length;
+	const char *ptr	 = buffer;
+	while (remaining) {
+		ssize_t written = write(fileDescriptor, ptr, remaining);
+		if (written <= 0) {
+			return -1;
+		}
+		remaining -= (size_t)written;
+		ptr += written;
+	}
+	return 0;
+}
 
 int main(int argc, char **argv) {
-	if (1 == argc) {
-		help();
-		return EXIT_FAILURE;
-	}
+	int fdOut			= STDOUT_FILENO;
+	char *inputFilePath = NULL;
+	char *fileBuffer;
+	size_t fileSize;
+	struct stat fileStats;
 
-	/* Variable Initialization */
-	static BFC self = {
-		.arch		= "x64",
-		.preprocess = true,
-		.optimize	= true,
-	};
+	const char *architecture = "x64";
+	bool preprocessEnabled	 = true;
+	bool optimizationEnabled = true;
 
-	FILE *output = stdout;
-	char *input	 = NULL;
-	int opt		 = '\0';
-
-	ssize_t fileSize = 0;
-	char *buffer	 = NULL;
-
-	/* Argument Parsing */
-	while (-1 != (opt = getopt(argc, argv, "ho:a:PO"))) {
+	int opt;
+	while ((opt = getopt(argc, argv, "ho:a:PO")) != -1) {
 		switch (opt) {
 		case 'h':
-			help();
-			break;
+			write(STDOUT_FILENO,
+				  "BFC - Brainfuck Compiler\n"
+				  "Usage: bfc -o [asm output] -a [arch] [-P] [-O] [bf file]\n"
+				  "Options:\n"
+				  "  -o: Set output file (default stdout)\n"
+				  "  -a: Set architecture (default x64)\n"
+				  "  -P: Disable preprocessing\n"
+				  "  -O: Disable optimization\n",
+				  183);
+			return EXIT_SUCCESS;
 		case 'o':
-			output = fopen(optarg, "we");
-			if (NULL == output) {
-				perror("Failed to open output file");
+			fdOut =
+				open(optarg, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+			if (fdOut < 0) {
+				perror("open output file");
 				return EXIT_FAILURE;
 			}
 			break;
 		case 'a':
-			self.arch = optarg;
+			architecture = optarg;
 			break;
 		case 'P':
-			self.preprocess = false;
+			preprocessEnabled = false;
 			break;
 		case 'O':
-			self.optimize = false;
+			optimizationEnabled = false;
 			break;
 		default:
-			(void)fprintf(stderr, "Unknown Option: %c\n", opt);
-			help();
 			return EXIT_FAILURE;
 		}
 	}
 
-	if (!(optind < argc)) {
-		(void)fputs("No input provided", stderr);
+	if (optind < argc) {
+		inputFilePath = argv[optind];
+	}
+
+	if (!inputFilePath) {
+		write(STDERR_FILENO, "No input provided\n", 18);
 		return EXIT_FAILURE;
 	}
-	input = argv[optind];
 
-	/* File reading */
-	fileSize = readfile(input, &buffer);
-	if (fileSize < 0) {
-		free(buffer);
-		perror(input);
+	int fdIn = open(inputFilePath, O_RDONLY | O_CLOEXEC);
+	if (fdIn < 0) {
+		perror(inputFilePath);
 		return EXIT_FAILURE;
 	}
-	(void)fwrite(buffer, 1, (size_t)fileSize, output); /* temporary */
 
-	/* Cleanup */
-	free(buffer);
-	return EXIT_SUCCESS;
-}
-
-static inline void help(void) {
-	(void)puts("BFC - Brainfuck Compiler\n"
-			   "    Usage:\n"
-			   "      `bfc -o [asm output] [bf file]`\n\n"
-			   "    Options:\n"
-			   "      -o:  - Sets output file, by default [stdio]\n"
-			   "      -a:  - Sets architecture output, by default [native]\n"
-			   "      -P   - Disables preprocessing\n"
-			   "      -O   - Disables optimization\n");
-}
-
-static inline ssize_t readfile(const char *filePath, char **bufferPtr) {
-	if (filePath == NULL || bufferPtr == NULL) {
-		return -1;
+	if (fstat(fdIn, &fileStats) < 0) {
+		perror("fstat failed");
+		close(fdIn);
+		return EXIT_FAILURE;
+	}
+	if (fileStats.st_size == 0) {
+		close(fdIn);
+		return EXIT_SUCCESS;
 	}
 
-	int fileDescriptor = open(filePath, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-	if (fileDescriptor < 0) {
-		return -1;
+	fileSize   = (size_t)fileStats.st_size;
+	fileBuffer = mmap(NULL, fileSize, PROT_READ, MAP_PRIVATE, fdIn, 0);
+	close(fdIn);
+	if (fileBuffer == MAP_FAILED) {
+		perror("mmap failed");
+		return EXIT_FAILURE;
 	}
 
-	struct stat fileStatus;
-	if (fstat(fileDescriptor, &fileStatus) < 0) {
-		close(fileDescriptor);
-		return -1;
-	}
+#ifdef MADV_SEQUENTIAL
+	madvise(fileBuffer, fileSize, MADV_SEQUENTIAL);
+#endif
 
-	if (fileStatus.st_size < 0 || fileStatus.st_size > SSIZE_MAX) {
-		close(fileDescriptor);
-		return -1;
-	}
-
-	const ssize_t fileSize	= fileStatus.st_size;
-	const size_t bufferSize = (size_t)fileSize + 1;
-
-	*bufferPtr = malloc(bufferSize);
-	if (*bufferPtr == NULL) {
-		close(fileDescriptor);
-		return -1;
-	}
-
-	ssize_t totalBytesRead = 0;
-	while (totalBytesRead < fileSize) {
-		ssize_t bytesRead = read(fileDescriptor, *bufferPtr + totalBytesRead,
-								 (size_t)(fileSize - totalBytesRead));
-
-		if (bytesRead <= 0) {
-			if (bytesRead == 0 && totalBytesRead == fileSize) {
-				break;
-			}
-			free(*bufferPtr);
-			*bufferPtr = NULL;
-			close(fileDescriptor);
-			return -1;
+	if (writeAll(fdOut, fileBuffer, fileSize) < 0) {
+		perror("write failed");
+		munmap(fileBuffer, fileSize);
+		if (fdOut != STDOUT_FILENO) {
+			close(fdOut);
 		}
-
-		totalBytesRead += bytesRead;
+		return EXIT_FAILURE;
 	}
 
-	if (totalBytesRead < fileSize) {
-		free(*bufferPtr);
-		*bufferPtr = NULL;
-		close(fileDescriptor);
-		return -1;
+	munmap(fileBuffer, fileSize);
+	if (fdOut != STDOUT_FILENO) {
+		close(fdOut);
 	}
 
-	close(fileDescriptor);
-	(*bufferPtr)[totalBytesRead] = '\0';
-	return totalBytesRead;
+	return EXIT_SUCCESS;
 }
